@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 9 * * 1"  # weekly — validate against the latest Flutter engine
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/ -v
+
+  engine-matrix:
+    # Validates the struct locator + patch roundtrip against current Flutter
+    # engine release binaries (arm64 + x86_64). Runs on every PR and weekly.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [arm64-v8a, x86_64]
+        target: [android-arm64-release, android-x64-release]
+        exclude:
+          - arch: arm64-v8a
+            target: android-x64-release
+          - arch: x86_64
+            target: android-arm64-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Resolve latest stable engine
+        id: engine
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          doc = json.load(urllib.request.urlopen(
+              "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"))
+          stable_hash = doc["current_release"]["stable"]
+          rel = next(r for r in doc["releases"] if r["hash"] == stable_hash)
+          version = rel["version"]
+          archive = rel["archive"]
+          # engine hash ships inside the release archive; the SDK's genesis
+          # convention keeps it beside the artifact path used below:
+          print(f"::set-output name=version::{version}")
+          PY
+      - name: Download engine artifact
+        run: |
+          # engine hash for the release: take it from the flutter repo tag
+          version=${{ steps.engine.outputs.version }}
+          tag=$(echo "$version" | tr '+' '-')
+          eh=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/$tag/bin/internal/engine.version" | tr -d '[:space:]')
+          echo "engine=$eh"
+          curl -sL -o /tmp/artifacts.zip \
+            "https://storage.googleapis.com/flutter_infra_release/flutter/$eh/${{ matrix.target }}/artifacts.zip" \
+            || curl -sL -o /tmp/artifacts.zip \
+            "https://storage.googleapis.com/flutter_infra_release/flutter/$eh/${{ matrix.target }}/artifacts.zip"
+          unzip -o /tmp/artifacts.zip -d /tmp/eng
+      - name: Validate locator + patch
+        run: |
+          python - <<'PY'
+          import zipfile, subprocess, sys
+          jar = [p for p in subprocess.run(["find", "/tmp/eng", "-name", "flutter.jar"],
+                                           capture_output=True, text=True).stdout.split()]
+          assert jar, "flutter.jar not found in engine artifact"
+          with zipfile.ZipFile(jar[0]) as zf:
+              for n in zf.namelist():
+                  if n.startswith("lib/") and n.endswith("libflutter.so"):
+                      abi = n.split("/")[1]
+                      if abi != "${{ matrix.arch }}":
+                          continue
+                      blob = zf.read(n)
+                      from flutterpinning.locate import locate_verify_chain
+                      from flutterpinning.so_patch import patch_so_bytes, stub_for
+                      hit = locate_verify_chain(blob, abi)
+                      assert hit, f"locator failed for {abi} on latest engine"
+                      print(f"{abi}: entry=0x{hit.entry_vaddr:x} by={hit.validated_by}")
+                      patched, info = patch_so_bytes(blob, abi, None, {})
+                      assert patched[:info.file_off + info.stub_size] != blob[:info.file_off + info.stub_size]
+                      stub = stub_for(abi)
+                      assert patched[info.file_off:info.file_off + info.stub_size] == stub
+                      print(f"{abi}: patch roundtrip OK (offset=0x{info.file_off:x})")
+          PY
