@@ -1,4 +1,9 @@
 signatures:
+- version: 3.44.9
+  arch: arm64-v8a
+  pattern: ff c3 01 d1 fd 7b 01 a9 ?? ?? ?? ?? 08 0a 80 52
+  offset: 7683968
+  source: 3.44.9 engine (by=string-anchors)
 - version: 3.47.x
   arch: arm64-v8a
   pattern: ff c3 01 d1 fd 7b 01 a9 ?? ?? ?? ?? 08 c0 46 39
@@ -9,6 +14,11 @@ signatures:
   pattern: b5 a8 b0 05 46 1d f0 e1 fb a9 68 04 46 f9 b1 20
   offset: 3261005
   source: gen-sig (entry=0x31c24d, by=position)
+- version: 3.44.9
+  arch: x86_64
+  pattern: 55 41 57 41 56 41 55 41 54 53 48 83 ec 38 c6 02
+  offset: 8568895
+  source: 3.44.9 engine (by=string-anchors)
 - version: 3.47.x
   arch: x86_64
   pattern: 55 41 57 41 56 41 55 41 54 53 48 83 ec 38 80 bf
