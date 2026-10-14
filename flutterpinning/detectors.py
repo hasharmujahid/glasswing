@@ -21,6 +21,24 @@ DART_AOT_LIB_NAME = "libapp.so"
 # 32 lowercase hex chars — the Dart VM snapshot hash embedded in libflutter.so.
 _SNAPSHOT_HASH_RE = re.compile(rb"(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])")
 
+# androguard (4.x) logs via loguru and is extremely chatty at DEBUG level.
+# Default: silenced. Use configure_androguard_logging(True) to see it.
+from loguru import logger as _loguru
+
+
+def configure_androguard_logging(enabled: bool) -> None:
+    """Enable or disable androguard's internal logging (loguru).
+
+    Suppressed by default so CLI output stays readable; enable it when
+    debugging APK parsing itself (`--androguard-logs`)."""
+    if enabled:
+        _loguru.enable("androguard")
+    else:
+        _loguru.disable("androguard")
+
+
+configure_androguard_logging(False)
+
 
 @dataclass
 class SoInfo:

@@ -121,11 +121,17 @@ def _java_version_check() -> None:
 def inspect(
     path: str = typer.Argument(..., help="APK file (or bare libflutter.so) to scan"),
     arch: Optional[str] = typer.Option(None, "--arch", help="ABI to inspect (default: preferred)"),
-    signaturdb: str = typer.Option(
+    db: Optional[str] = typer.Option(
         None, "--db", help="Path to db/signatures.yaml override"
     ),
+    androguard_logs: bool = typer.Option(
+        False, "--androguard-logs",
+        help="Show androguard's internal DEBUG logs (default: suppressed)"),
 ) -> None:
     """Show Flutter metadata, supported ABIs, and whether the version is supported."""
+    from .detectors import configure_androguard_logging
+
+    configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
     console.print(_disclaimer_panel(), justify="left")
     if not os.path.isfile(path):
@@ -187,8 +193,14 @@ def patch(
         False, "--gadget", help="Also embed frida-gadget for runtime instrumentation without root"),
     keystore: Optional[str] = typer.Option(None, "--keystore", help="Keystore for re-signing"),
     install: bool = typer.Option(False, "--install", help="install via adb after patching"),
+    androguard_logs: bool = typer.Option(
+        False, "--androguard-logs",
+        help="Show androguard's internal DEBUG logs (default: suppressed)"),
 ):
     """Patch libflutter.so (static), repackage, and re-sign — no root needed."""
+    from .detectors import configure_androguard_logging
+
+    configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
     console.print(_disclaimer_panel(), justify="left")
     if not os.path.isfile(path):
@@ -253,11 +265,16 @@ def hook(
     arch: Optional[str] = typer.Option(None, "--arch", help="ABI to assume (default: preferred)"),
     gadget: bool = typer.Option(False, "--gadget", help="Expect a gadget build instead of frida-server"),
     no_spawn: bool = typer.Option(False, "--no-spawn", help="Attach to a running process instead of spawning"),
+    androguard_logs: bool = typer.Option(
+        False, "--androguard-logs",
+        help="Show androguard's internal DEBUG logs (default: suppressed)"),
 ):
     """Launch the app on a device and bypass pinning in memory (needs frida-server)."""
     import frida
     from .hook import build_hook_script
+    from .detectors import configure_androguard_logging
 
+    configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
     console.print(_disclaimer_panel(), justify="left")
 
@@ -333,8 +350,14 @@ def gen_sig(
     out: str = typer.Option("signature.yaml", "--out", "-o", help="Where to write the YAML entry"),
     arch: Optional[str] = typer.Option(None, "--arch", help="ABI override"),
     version: Optional[str] = typer.Option(None, "--version", help="Version label override"),
+    androguard_logs: bool = typer.Option(
+        False, "--androguard-logs",
+        help="Show androguard's internal DEBUG logs (default: suppressed)"),
 ):
     """Generate a signature entry for an engine version missing from the DB."""
+    from .detectors import configure_androguard_logging
+
+    configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
     from .gen_signature import generate_signature
 
