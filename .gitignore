@@ -1,3 +1,4 @@
+# environments / build artifacts
 .venv/
 __pycache__/
 *.pyc
@@ -5,12 +6,16 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+
+# signing artifacts
 *.keystore
 *.idsig
-failed/
 *.apk
-*.idsig
+
+# local test APK drop folders (never uploaded)
 failed/
+test/
+
+# local research notes (never uploaded)
 Research.md
 memory.md
-test/
