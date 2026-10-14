@@ -95,7 +95,7 @@ def find_entry(
         raise LocateFailed(
             f"could not locate the verify-cert-chain function (arch={arch!r}, "
             f"version={version!r}){': ' + detail if detail else ''}; run "
-            f"`flutterpinning gen-sig` against this release and contribute the "
+            f"`glasswing gen-sig` against this release and contribute the "
             f"signature"
         )
     return ("signature", sig_off, f"signature matched engine {matched}")

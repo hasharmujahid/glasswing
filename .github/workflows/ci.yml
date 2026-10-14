@@ -77,8 +77,8 @@ jobs:
                       if abi != "${{ matrix.arch }}":
                           continue
                       blob = zf.read(n)
-                      from flutterpinning.locate import locate_verify_chain
-                      from flutterpinning.so_patch import patch_so_bytes, stub_for
+                      from glasswing.locate import locate_verify_chain
+                      from glasswing.so_patch import patch_so_bytes, stub_for
                       hit = locate_verify_chain(blob, abi)
                       assert hit, f"locator failed for {abi} on latest engine"
                       print(f"{abi}: entry=0x{hit.entry_vaddr:x} by={hit.validated_by}")

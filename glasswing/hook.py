@@ -16,7 +16,7 @@ from typing import Dict
 from .so_patch import stub_for
 
 AGENT_TEMPLATE = r"""
-// flutterpinning runtime agent — authorized use only.
+// glasswing runtime agent — authorized use only.
 'use strict';
 
 // ABI -> entry file offset (relative to module base), computed on the host.

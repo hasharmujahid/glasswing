@@ -1,4 +1,4 @@
-"""Target classification for flutterpinning.
+"""Target classification for glasswing.
 
 Determines whether an APK's SSL pinning is actually enforced through Flutter's
 BoringSSL (libflutter.so) — the stack this tool covers — or through separate
@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 # well-known native network stacks that do their own TLS/pinning,
-# i.e. NOT Flutter's BoringSSL and NOT covered by flutterpinning
+# i.e. NOT Flutter's BoringSSL and NOT covered by glasswing
 NON_FLUTTER_TLS_LIBS = {
     "libtnet": "Alibaba ANet (SLIGHT_SSL: custom TLS 1.3 + custom public-key pinning)",
     "libxquic": "Alibaba XQUIC (QUIC; embedded BabaSSL — a BoringSSL fork, but not libflutter's)",
@@ -26,7 +26,7 @@ NON_FLUTTER_TLS_LIBS = {
 
 @dataclass
 class TargetVerdict:
-    is_flutter_target: bool          # true => flutterpinning can bypass the Flutter-side pinning
+    is_flutter_target: bool          # true => glasswing can bypass the Flutter-side pinning
     has_flutter_engine: bool
     non_flutter_stacks: List[str] = field(default_factory=list)
     reason: str = ""
@@ -38,11 +38,11 @@ class TargetVerdict:
 
 
 def classify_apk(apk_path: str) -> TargetVerdict:
-    """Inspect an APK and decide if flutterpinning is the right tool for it.
+    """Inspect an APK and decide if glasswing is the right tool for it.
 
-    Rule: flutterpinning targets Flutter/BoringSSL pinning ONLY. If the app
+    Rule: glasswing targets Flutter/BoringSSL pinning ONLY. If the app
     primarily uses separate native TLS stacks (ANet/SLIGHT_SSL, Cronet, XQUIC,
-    shared libopenssl, ...), the APK is not a valid flutterpinning target and
+    shared libopenssl, ...), the APK is not a valid glasswing target and
     the user should not expect the patch to intercept that traffic."""
     with zipfile.ZipFile(apk_path) as zf:
         names = zf.namelist()
@@ -64,7 +64,7 @@ def classify_apk(apk_path: str) -> TargetVerdict:
         verdict.is_flutter_target = False   # mixed app: pinning likely enforced outside Flutter
         verdict.reason = (
             "mixed app: libflutter.so present, but pinning also enforced by other native "
-            "stacks — flutterpinning covers only the Flutter/dart:io layer"
+            "stacks — glasswing covers only the Flutter/dart:io layer"
         )
     elif not flutter:
         verdict.is_flutter_target = False

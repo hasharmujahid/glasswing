@@ -1,4 +1,4 @@
-"""Unit tests for flutterpinning's core helpers (offline, deterministic)."""
+"""Unit tests for glasswing's core helpers (offline, deterministic)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from flutterpinning import scanner  # noqa: E402
-from flutterpinning.gen_signature import _wildcard_bytes  # noqa: E402
-from flutterpinning.so_patch import stub_for, STUBS  # noqa: E402
+from glasswing import scanner  # noqa: E402
+from glasswing.gen_signature import _wildcard_bytes  # noqa: E402
+from glasswing.so_patch import stub_for, STUBS  # noqa: E402
 
 
 def test_pattern_roundtrip():

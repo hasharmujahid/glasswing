@@ -1,6 +1,6 @@
 """Signature generation: extract PR-ready byte-signatures from located entries.
 
-`flutterpinning gen-sig <apk>` runs the version-independent struct locator on
+`glasswing gen-sig <apk>` runs the version-independent struct locator on
 the app's libflutter.so, then captures the first bytes of the located function
 as a wildcard pattern for db/signatures.yaml (fast path for future engines).
 

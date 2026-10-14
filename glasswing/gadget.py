@@ -56,9 +56,9 @@ def inject_gadget(
         raise ValueError(f"unsupported abi for gadget injection: {abi!r}")
 
     entry_libflutter = f"lib/{abi}/libflutter.so"
-    patch_lib_name = f"libflutterpinning{abi}.so"  # marker lib (harmless placeholder)
+    patch_lib_name = f"libglasswing{abi}.so"  # marker lib (harmless placeholder)
 
-    with tempfile.TemporaryDirectory(prefix="flutterpinning-") as td:
+    with tempfile.TemporaryDirectory(prefix="glasswing-") as td:
         # 1. pull libflutter.so out of the APK
         with zipfile.ZipFile(apk_path) as zf:
             libflutter_bytes = zf.read(entry_libflutter)

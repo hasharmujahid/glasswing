@@ -1,4 +1,4 @@
-"""flutterpinning CLI — inspect, patch, and hook Flutter apps for authorized pentesting."""
+"""glasswing CLI — inspect, patch, and hook Flutter apps for authorized pentesting."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from .detectors import scan_path
 from .so_patch import patch_so_bytes, stub_disassembly_hint
 
 app = typer.Typer(
-    name="flutterpinning",
+    name="glasswing",
     help="Bypass Flutter SSL pinning for authorized penetration testing.",
     add_completion=False,
     no_args_is_help=True,
@@ -35,7 +35,7 @@ DISCLAIMER = (
 )
 
 APP_HOOK_SCRIPT = """\
-// flutterpinning runtime hook:
+// glasswing runtime hook:
 //  - pattern-scan libflutter.so for the BoringSSL verify-cert-chain function
 //  - replace it so cert verification always succeeds
 Java.perform(function () {
@@ -150,7 +150,7 @@ def inspect(
         if not verdict.is_flutter_target:
             style = "[yellow]" if verdict.mixed else "[red]"
             console.print(Panel(
-                f"{style}Not a flutterpinning target.[/]\n{verdict.reason}",
+                f"{style}Not a glasswing target.[/]\n{verdict.reason}",
                 title="Target classification", border_style="yellow" if verdict.mixed else "red",
             ))
             if not verdict.mixed:
@@ -235,7 +235,7 @@ def patch(
     if not verdict.is_flutter_target:
         style = "yellow" if verdict.mixed else "red"
         console.print(Panel(
-            f"[{style}]Not a flutterpinning target.[/]\n{verdict.reason}",
+            f"[{style}]Not a glasswing target.[/]\n{verdict.reason}",
             title="Target classification", border_style=style,
         ))
         if not verdict.mixed:
@@ -398,7 +398,7 @@ def gen_sig(
 def _version_callback(value: bool) -> None:
     if value:
         console.print(_BANNER, style="cyan", highlight=False)
-        console.print(f"flutterpinning v{__version__}")
+        console.print(f"glasswing v{__version__}")
         raise typer.Exit(0)
 
 
@@ -408,4 +408,4 @@ def main(
         None, "--version", callback=_version_callback, is_flag=True,
         help="Print the version and exit"),
 ):
-    """flutterpinning — authorized-use Flutter SSL pinning bypass."""
+    """glasswing — authorized-use Flutter SSL pinning bypass."""

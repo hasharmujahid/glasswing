@@ -20,9 +20,9 @@ from typing import List, Optional, Tuple
 STORED = zipfile.ZIP_STORED
 DEFLATED = zipfile.ZIP_DEFLATED
 
-DEFAULT_DEBUG_KEYSTORE = os.path.expanduser("~/.flutterpinning/debug.keystore")
-KS_PASS = "flutterpinning"
-KEY_ALIAS = "flutterpinning"
+DEFAULT_DEBUG_KEYSTORE = os.path.expanduser("~/.glasswing/debug.keystore")
+KS_PASS = "glasswing"
+KEY_ALIAS = "glasswing"
 
 
 def extract_apk(apk_path: str, dest: str) -> str:
@@ -89,7 +89,7 @@ def ensure_debug_keystore(keystore_path: Optional[str] = None) -> str:
                 "-keyalg", "RSA",
                 "-keysize", "2048",
                 "-validity", "10000",
-                "-dname", "CN=flutterpinning, OU=Pentest, O=Security, L=Internet, S=Internet, C=O1",
+                "-dname", "CN=glasswing, OU=Pentest, O=Security, L=Internet, S=Internet, C=O1",
             ],
             check=True,
             stdout=subprocess.DEVNULL,
