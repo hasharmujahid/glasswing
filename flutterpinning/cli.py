@@ -130,6 +130,7 @@ def inspect(
 ) -> None:
     """Show Flutter metadata, supported ABIs, and whether the version is supported."""
     from .detectors import configure_androguard_logging
+    from .classify import classify_apk
 
     configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
@@ -137,6 +138,23 @@ def inspect(
     if not os.path.isfile(path):
         console.print(f"[red]No such file:[/red] {path}")
         raise typer.Exit(1)
+
+    res = scan_path(path)
+    if res.error:
+        console.print(f"[red]{res.error}[/red]")
+        raise typer.Exit(1)
+
+    # target classification: is the pinning actually Flutter/BoringSSL-side?
+    if res.is_apk:
+        verdict = classify_apk(path)
+        if not verdict.is_flutter_target:
+            style = "[yellow]" if verdict.mixed else "[red]"
+            console.print(Panel(
+                f"{style}Not a flutterpinning target.[/]\n{verdict.reason}",
+                title="Target classification", border_style="yellow" if verdict.mixed else "red",
+            ))
+            if not verdict.mixed:
+                raise typer.Exit(1)
 
     res = scan_path(path)
     if res.error:
@@ -199,6 +217,7 @@ def patch(
 ):
     """Patch libflutter.so (static), repackage, and re-sign — no root needed."""
     from .detectors import configure_androguard_logging
+    from .classify import classify_apk
 
     configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
@@ -211,6 +230,18 @@ def patch(
     if res.error:
         console.print(f"[red]{res.error}[/red]")
         raise typer.Exit(1)
+
+    verdict = classify_apk(path)
+    if not verdict.is_flutter_target:
+        style = "yellow" if verdict.mixed else "red"
+        console.print(Panel(
+            f"[{style}]Not a flutterpinning target.[/]\n{verdict.reason}",
+            title="Target classification", border_style=style,
+        ))
+        if not verdict.mixed:
+            raise typer.Exit(1)
+        console.print("[yellow]continuing: Flutter layer will still be patched "
+                      "(non-Flutter stacks stay pinned)[/yellow]")
     if not res.is_flutter:
         console.print("[red]Not a Flutter app (no libflutter.so).[/red]")
         raise typer.Exit(1)
