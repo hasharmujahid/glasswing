@@ -29,7 +29,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "frida>=16.0.0",
+  # 16.x: frida 17 removed the bundled Java bridge, breaking plain scripts
+  # that call Java.perform() (nearly all community scripts)
+  "frida>=16.0.0,<17",
   "typer>=0.9",
   "rich>=13.0.0",
   "PyYAML>=6.0",

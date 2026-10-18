@@ -79,7 +79,9 @@ pass `--keystore` (plus `--ks-pass` / `--key-alias`) to `glasswing patch`.
 
 - Android build-tools (`apksigner`, `zipalign`) — for static patching
 - `adb` — for `hook` and `--install`
-- Frida server matching the tool's version, running on-device — for `hook` mode
+- Frida **16.x** (`pip install 'frida<17'`) — frida-server on the device must match the
+  major version. Frida 17 removed the bundled Java bridge that user scripts loaded via
+  `-l` rely on.
 
 ## Quick start
 

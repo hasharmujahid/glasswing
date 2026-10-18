@@ -368,6 +368,11 @@ def hook(
             user_script.load()
         except Exception as exc:
             console.print(f"[red]failed to load {user_file.name}:[/red] {exc}")
+            if "'Java' is not defined" in str(exc):
+                console.print(
+                    "[yellow]hint:[/yellow] this script uses Java.perform, which needs the "
+                    "Java bridge frida 17+ no longer bundles. glasswing pins frida <17 — "
+                    "make sure the on-device frida-server is also a 16.x release.")
             raise typer.Exit(1) from exc
         console.print(f"[green]loaded user script[/green] {user_path}")
 
