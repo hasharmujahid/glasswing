@@ -30,7 +30,7 @@ Flutter apps don't use the OS TLS stack. `dart:io`'s `HttpClient` (and therefore
 | Hook `TrustManager` / `OkHttp` / `Conscrypt` | ❌ never called for dart:io traffic |
 | `objection` / Frida SSL-pinning scripts | ❌ target Java/Kotlin TLS paths that don't exist here |
 
-What about existing Flutter-specific tools? [reFlutter](https://github.com/Impact-I/reFlutter) rebuilds the **entire Flutter engine** from source with a one-line patch — correct but heavy: you need depot_tools, the matching engine commit, and a full ninja build per engine version. Glasswing applies the **same semantic patch directly to the shipped binary** — a few seconds, per APK, no toolchain.
+What about existing Flutter-specific tools? [reFlutter](https://github.com/Impact-I/reFlutter) rebuilds the **entire Flutter engine** from source with a one-line patch — correct but heavy: you need depot_tools, the matching engine commit, and a full ninja build per engine version. It also refuses valid Flutter APKs that don't ship `arm64-v8a/libapp.so` (see the [head-to-head comparison](#head-to-head-glasswing-vs-reflutter) below). Glasswing applies the **same semantic patch directly to the shipped binary** — a few seconds, per APK, no toolchain.
 
 ## What it does
 
@@ -154,6 +154,39 @@ Every claim below was reproduced on Android emulators against a hostile HTTPS se
 | Flutter engine artifacts | 3.44.9 & 3.47.x | offline locate + patch roundtrip | all 3 ABIs ✅ |
 | Butterfly, ente auth (F-Droid) | 3.4x | static patch | locator + patch verified ✅ |
 | Control (unpatched) | — | — | `CERTIFICATE_VERIFY_FAILED` ✅ |
+
+### Head-to-head: Glasswing vs reFlutter
+
+Two production Flutter APKs, both tools, same machine — reFlutter refused to
+patch either one:
+
+| Test | reFlutter | Glasswing |
+|---|---|---|
+| **1** — x86_64 Flutter app (Dart 3.13) | ❌ refuses: *"There was no libapp.so (Android)… Make sure there is arm64-v8a/libapp.so in the package"* | ✅ located via struct-locator, patched, re-signed (`signature verified: True`) → `dart:io` traffic decrypted in Burp (`User-Agent: Dart/3.13 (dart:io)`) |
+| **2** — Skandia, x86_64, Dart version not detectable | ❌ same refusal | ✅ located via struct-locator, patched → `/mobile/external/mobile-content/api/v1/Content` decrypted, `app-framework: flutter` visible |
+
+Why: reFlutter keys its patch on finding `arm64-v8a/libapp.so` (and engine-version
+assumptions); an APK that ships another ABI or hides the version string gets
+refused. Glasswing never reads `libapp.so` — it locates the verify function inside
+`libflutter.so` structurally, for every ABI the APK actually ships.
+
+**Test 1 — reFlutter refuses the APK; Glasswing patches it and the traffic decrypts:**
+
+<div align="center">
+  <img src="images/comparison-test1-reflutter-fail.png" alt="reFlutter refuses the APK: no libapp.so found" width="49%">
+  <img src="images/comparison-test1-glasswing-patch.png" alt="glasswing patch: struct-locator hit, signature verified" width="49%">
+  <br>
+  <img src="images/comparison-test1-glasswing-traffic.png" alt="Decrypted dart:io traffic in Burp: User-Agent Dart/3.13 (dart:io)" width="86%">
+</div>
+
+**Test 2 — same refusal from reFlutter; Skandia patched and decrypted:**
+
+<div align="center">
+  <img src="images/comparison-test2-reflutter-fail.png" alt="reFlutter refuses again: same libapp.so error" width="49%">
+  <img src="images/comparison-test2-glasswing-patch.png" alt="glasswing inspect + patch of skandia.apk: struct-locator hit" width="49%">
+  <br>
+  <img src="images/comparison-test2-glasswing-traffic.png" alt="Decrypted traffic in Burp: app-framework flutter, HTTP/2 200" width="86%">
+</div>
 
 ## Known limitations
 
