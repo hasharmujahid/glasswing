@@ -150,6 +150,66 @@ def test_hook_exposes_load_flag():
     assert "-l" in result.output
 
 
+def test_wrap_user_script_composes_bootstrap():
+    from glasswing.hook import wrap_user_script
+
+    js = wrap_user_script("Java.perform(function () { send('hi'); });", "/target/my.js")
+    assert "__glasswing_load_bridge" in js           # bridge bootstrap present
+    assert 'Script.evaluate("/target/my.js"' in js   # named evaluation for clean stacks
+    assert "Java.perform" in js
+
+
+def test_wrapped_user_script_is_valid_javascript(tmp_path):
+    import shutil
+    import subprocess
+
+    from glasswing.hook import wrap_user_script
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available for JS syntax checking")
+
+    js = wrap_user_script("Java.perform(function () { send('hi'); });", "/target/my.js")
+    script = tmp_path / "wrapped.js"
+    script.write_text(js)
+    proc = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+    assert proc.returncode == 0, f"wrapped user script is not valid JS:\n{proc.stderr}"
+
+
+def test_bridge_request_is_served():
+    """frida 17+ runtimes ask for the Java bridge; the handler must post it back."""
+    from glasswing.cli import _frida_message_handler
+
+    posted = []
+
+    class FakeScript:
+        def post(self, message):
+            posted.append(message)
+
+    handler = _frida_message_handler(FakeScript(), tag="x.js")
+    handler({"type": "send", "payload": {"type": "frida:load-bridge", "name": "Java"}}, None)
+
+    assert len(posted) == 1
+    assert posted[0]["type"] == "frida:bridge-loaded"
+    assert posted[0]["filename"] == "java.js"
+    assert "Java" in posted[0]["source"]
+
+
+def test_bridge_handler_passes_normal_messages_through(capsys):
+    from glasswing.cli import _frida_message_handler
+
+    calls = []
+
+    class FakeScript:
+        def post(self, message):
+            calls.append(message)
+
+    handler = _frida_message_handler(FakeScript())
+    handler({"type": "send", "payload": {"type": "patched"}}, None)
+    assert calls == []  # nothing bridge-like: no post
+    assert "patched" in capsys.readouterr().out
+
+
 def test_wildcard_arm64_volatile_words():
     pattern = _wildcard_bytes(
         b"\x20\x00\x80\x52" + b"\xc0\x03\x5f\xd6" + b"\x01\x00\x00\x94",

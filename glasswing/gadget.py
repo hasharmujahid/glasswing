@@ -17,9 +17,9 @@ import zipfile
 from typing import Optional
 
 GADGET_LIBRARY = "libfrida-gadget.so"
-# keep in sync with the frida>=16,<17 pin in pyproject — gadget, frida-server
+# keep in sync with the frida>=17 pin in pyproject — gadget, frida-server
 # and the host bindings must share a major for script compatibility
-GADGET_VERSION = "16.7.19"
+GADGET_VERSION = "17.12.0"
 
 # glasswing ABI -> frida release naming
 ABI_TO_FRIDA_ARCH = {

@@ -82,10 +82,44 @@ def _check_adb() -> bool:
 
 
 
-def _script_message_printer(tag: str):
-    """Frida message handler that prefixes console output with the script name."""
+def _try_serve_bridge(message, script) -> bool:
+    """Serve frida 17+ runtime bridge requests (Java/ObjC/Swift).
+
+    Frida 17 removed the bundled bridges: when a script references `Java` etc.,
+    the runtime emits {payload: {type: 'frida:load-bridge', name}} and expects
+    the host to post back the bridge source — the same exchange the official
+    REPL performs."""
+    if message.get("type") != "send":
+        return False
+    payload = message.get("payload")
+    if not isinstance(payload, dict) or payload.get("type") != "frida:load-bridge":
+        return False
+
+    stem = str(payload.get("name", "")).lower()
+    try:
+        import frida_tools
+
+        bridges = Path(frida_tools.__file__).parent / "bridges"
+        bridge = next(p for p in bridges.glob("*.js") if p.stem == stem)
+    except (ImportError, StopIteration) as exc:
+        console.print(f"[red]script requested the {stem!r} bridge but it could not be "
+                      f"served ({exc}) — reinstall glasswing (ships frida-tools)[/red]")
+        return True
+    script.post({
+        "type": "frida:bridge-loaded",
+        "filename": bridge.name,
+        "source": bridge.read_text(encoding="utf-8"),
+    })
+    return True
+
+
+def _frida_message_handler(script, tag: Optional[str] = None):
+    """Message handler: serve bridge requests, print everything else."""
     def _handler(message, data):
-        console.print(f"  [dim][{tag}] {message}[/dim]")
+        if _try_serve_bridge(message, script):
+            return
+        prefix = f"[{tag}] " if tag else ""
+        console.print(f"  [dim]{prefix}{message}[/dim]")
     return _handler
 
 
@@ -288,7 +322,7 @@ def hook(
     import frida
 
     from .detectors import configure_androguard_logging
-    from .hook import build_hook_script
+    from .hook import build_hook_script, wrap_user_script
 
     configure_androguard_logging(androguard_logs)
     console.print(_BANNER, style="cyan", highlight=False)
@@ -352,7 +386,7 @@ def hook(
         pid = device.spawn([package])
         session = device.attach(pid)
     script = session.create_script(script_src)
-    script.on("message", lambda message, data: console.print(f"  [dim]{message}[/dim]"))
+    script.on("message", _frida_message_handler(script))
     script.load()
 
     # user scripts run in the same session, after the bypass agent — so any
@@ -363,8 +397,9 @@ def hook(
             console.print(f"[red]script not found:[/red] {user_path}")
             raise typer.Exit(1)
         try:
-            user_script = session.create_script(user_file.read_text())
-            user_script.on("message", _script_message_printer(user_file.name))
+            user_script = session.create_script(
+                wrap_user_script(user_file.read_text(), user_path))
+            user_script.on("message", _frida_message_handler(user_script, tag=user_file.name))
             user_script.load()
         except Exception as exc:
             console.print(f"[red]failed to load {user_file.name}:[/red] {exc}")

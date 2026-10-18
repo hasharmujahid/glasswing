@@ -84,6 +84,46 @@ patchOnce();
 """
 
 
+USER_SCRIPT_BOOTSTRAP = r"""
+// glasswing: load frida 17+ bridges (Java/ObjC/Swift) on demand — same
+// contract as the official REPL. No-op on runtimes that bundle them (frida 16).
+function __glasswing_load_bridge(name) {
+  var result;
+  send({ type: 'frida:load-bridge', name: name });
+  recv('frida:bridge-loaded', function (m) {
+    result = Script.evaluate('/frida/bridges/' + m.filename, '(function () { ' +
+      [m.source,
+       "Object.defineProperty(globalThis, '" + name + "', { value: bridge });",
+       'return bridge;'].join('\n') + ' })();');
+  }).wait();
+  return result;
+}
+['ObjC', 'Swift', 'Java'].forEach(function (name) {
+  try {
+    if (typeof globalThis[name] !== 'undefined')
+      return;                       // runtime bundles this bridge already
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      get: function () { return __glasswing_load_bridge(name); }
+    });
+  } catch (e) {}                    // keep going if the slot is not writable
+});
+"""
+
+
+def wrap_user_script(source: str, name: str) -> str:
+    """Compose a `-l` user script: bridge bootstrap + named evaluation.
+
+    frida 17 removed the bundled Java/ObjC/Swift bridges; the glasswing host
+    serves them when the runtime asks (frida:load-bridge -> frida:bridge-loaded),
+    mirroring frida-tools' REPL so community scripts keep working unchanged.
+    """
+    import json
+
+    return (USER_SCRIPT_BOOTSTRAP + "\n" +
+            f"Script.evaluate({json.dumps(name)}, {json.dumps(source)});\n")
+
+
 def build_hook_script(offsets: dict[str, int], stub_hexes: dict[str, str]) -> str:
     """Render the Frida agent with the host-computed per-ABI offset map."""
     import json

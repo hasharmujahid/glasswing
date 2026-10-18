@@ -79,9 +79,9 @@ pass `--keystore` (plus `--ks-pass` / `--key-alias`) to `glasswing patch`.
 
 - Android build-tools (`apksigner`, `zipalign`) — for static patching
 - `adb` — for `hook` and `--install`
-- Frida **16.x** (`pip install 'frida<17'`) — frida-server on the device must match the
-  major version. Frida 17 removed the bundled Java bridge that user scripts loaded via
-  `-l` rely on.
+- Frida **17.x** for `hook` mode — the on-device frida-server must match the major
+  version. glasswing serves the Java/ObjC/Swift bridges to `-l` user scripts itself
+  (frida 17 no longer bundles them), so community scripts using `Java.perform` work.
 
 ## Quick start
 
