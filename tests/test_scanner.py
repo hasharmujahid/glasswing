@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -144,10 +145,13 @@ def test_hook_exposes_load_flag():
 
     from glasswing.cli import app
 
-    result = CliRunner().invoke(app, ["hook", "--help"])
+    result = CliRunner().invoke(app, ["hook", "--help"],
+                                env={"NO_COLOR": "1", "TERM": "dumb"})
     assert result.exit_code == 0
-    assert "--load" in result.output
-    assert "-l" in result.output
+    # strip any residual ANSI escapes (CI terminals may still colorize)
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--load" in plain
+    assert "-l" in plain
 
 
 def test_wrap_user_script_composes_bootstrap():

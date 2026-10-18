@@ -50,7 +50,7 @@ jobs:
         id: engine
         run: |
           python - <<'PY'
-          import json, urllib.request
+          import json, os, urllib.request
           doc = json.load(urllib.request.urlopen(
               "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"))
           stable_hash = doc["current_release"]["stable"]
