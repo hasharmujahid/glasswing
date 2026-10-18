@@ -115,6 +115,30 @@ def test_build_hook_script_substitutes_offsets():
     assert "{{" not in js and "}}" not in js
 
 
+def test_hook_agent_is_valid_javascript(tmp_path):
+    """Guard against Python-isms (e.g. implicit string concat) in the JS template.
+
+    The agent only reaches frida at runtime, so a SyntaxError there would
+    otherwise surface as a cryptic create_script() crash on-device."""
+    import shutil
+    import subprocess
+
+    from glasswing.hook import build_hook_script
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available for JS syntax checking")
+
+    js = build_hook_script(
+        {"arm64-v8a": 0x1000, "x86_64": 0x2000},
+        {"arm64-v8a": "20008052c0035fd6", "x86_64": "b8010000c3"},
+    )
+    script = tmp_path / "agent.js"
+    script.write_text(js)
+    proc = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+    assert proc.returncode == 0, f"agent template is not valid JS:\n{proc.stderr}"
+
+
 def test_wildcard_arm64_volatile_words():
     pattern = _wildcard_bytes(
         b"\x20\x00\x80\x52" + b"\xc0\x03\x5f\xd6" + b"\x01\x00\x00\x94",

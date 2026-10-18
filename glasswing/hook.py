@@ -48,8 +48,8 @@ function patchOnce() {
   var arch = archOfModule(mod.base);
   var offset = arch ? OFFSETS[arch] : null;
   if (arch === null || offset === undefined) {
-    send({type:'error', msg:'unsupported arch for loaded module '
-         '(e_machine detection failed or ABI not patched)'});
+    send({type:'error', msg:'unsupported arch for loaded module ' +
+        '(e_machine detection failed or ABI not patched)'});
     return;
   }
 
