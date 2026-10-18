@@ -49,7 +49,7 @@ Certificate verification now always succeeds → the app accepts your intercepti
 | Mode | Command | Needs root? | How it works |
 |---|---|---|---|
 | **Static patch** | `glasswing patch app.apk -o out.apk` | **No** | Patches `libflutter.so` inside the APK, repacks, re-signs. Install the output and browse. |
-| **Runtime hook** | `glasswing hook app.apk` | Yes (frida-server) | Patches the same function **in memory** at process spawn. Original APK untouched on disk. |
+| **Runtime hook** *(experimental)* | `glasswing hook app.apk` | Yes (frida-server) | Patches the same function **in memory** at process spawn. Original APK untouched on disk. |
 | **Static + gadget** | `glasswing patch --gadget` | **No** | Static patch + embedded frida-gadget for later instrumentation. |
 
 ### How it finds the function (no offsets table needed)
@@ -102,6 +102,29 @@ glasswing hook app.apk -l my-interceptor.js -l log-everything.js
 # 3. Configure your proxy (Burp / mitmproxy) and browse the app.
 ```
 
+## Runtime hooking — experimental
+
+> ⚠️ **Experimental:** the Frida runtime-hook path is newer than static patching.
+> The success rate so far is **promising** — validated end-to-end on a production
+> Flutter app (screenshots below) as well as the test corpus — but treat it as a
+> preview: keep `glasswing patch` as the battle-tested fallback while `hook`
+> matures.
+
+<div align="center">
+
+**One command, two agents, one session** — the SSL-pinning bypass runs alongside
+your own Frida scripts (via `-l`), then the app resumes:
+
+<img src="images/runtime-hook-cli.png" alt="glasswing hook: bypass agent and a user script loading together, install-source hooks firing" width="100%">
+
+The same run, seen from the other side — the app's **Flutter `dart:io` traffic
+fully decrypted** in Burp Suite (`User-Agent: Dart/3.11 (dart:io)`), while the app
+works normally:
+
+<img src="images/runtime-hook-burp-traffic.png" alt="Decrypted Talabat dart:io traffic in Burp Suite after glasswing hook" width="100%">
+
+</div>
+
 ### Target classification
 
 Not every app with a `libflutter.so` is a valid target. Glasswing inspects every APK for **other native TLS stacks** (Alibaba ANet/SLIGHT_SSL, XQUIC, Cronet, shared `libopenssl.so`, ...) and warns you **before** you waste time:
@@ -143,6 +166,13 @@ Every claim below was reproduced on Android emulators against a hostile HTTPS se
 
 - `glasswing gen-sig app.apk --version X.Y` → PR-ready signature entry
 - CI (`.github/workflows/ci.yml`) validates locate+patch roundtrips against the latest stable engine **weekly** — new engine breakage is caught automatically
+
+## Versioning
+
+Glasswing follows [SemVer](https://semver.org/): releases are tagged `vMAJOR.MINOR.PATCH`.
+While pre-`1.0`, new features land in the **minor** version and fixes in the **patch**
+version; the Python/CLI surface may still evolve between minors. The single source of
+truth for the version is `glasswing.__version__` (packaging reads it dynamically).
 
 ## Authorized use only
 
