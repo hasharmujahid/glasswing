@@ -139,6 +139,17 @@ def test_hook_agent_is_valid_javascript(tmp_path):
     assert proc.returncode == 0, f"agent template is not valid JS:\n{proc.stderr}"
 
 
+def test_hook_exposes_load_flag():
+    from typer.testing import CliRunner
+
+    from glasswing.cli import app
+
+    result = CliRunner().invoke(app, ["hook", "--help"])
+    assert result.exit_code == 0
+    assert "--load" in result.output
+    assert "-l" in result.output
+
+
 def test_wildcard_arm64_volatile_words():
     pattern = _wildcard_bytes(
         b"\x20\x00\x80\x52" + b"\xc0\x03\x5f\xd6" + b"\x01\x00\x00\x94",

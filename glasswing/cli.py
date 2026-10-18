@@ -82,6 +82,13 @@ def _check_adb() -> bool:
 
 
 
+def _script_message_printer(tag: str):
+    """Frida message handler that prefixes console output with the script name."""
+    def _handler(message, data):
+        console.print(f"  [dim][{tag}] {message}[/dim]")
+    return _handler
+
+
 @app.command()
 def inspect(
     path: str = typer.Argument(..., help="APK file (or bare libflutter.so) to scan"),
@@ -270,6 +277,9 @@ def hook(
         False, "--gadget", help="Expect a gadget build instead of frida-server"),
     no_spawn: bool = typer.Option(
         False, "--no-spawn", help="Attach to a running process instead of spawning"),
+    load: list[str] = typer.Option(
+        [], "--load", "-l",
+        help="Additional Frida script(s) to inject after the bypass agent (repeatable)"),
     androguard_logs: bool = typer.Option(
         False, "--androguard-logs",
         help="Show androguard's internal DEBUG logs (default: suppressed)"),
@@ -344,6 +354,23 @@ def hook(
     script = session.create_script(script_src)
     script.on("message", lambda message, data: console.print(f"  [dim]{message}[/dim]"))
     script.load()
+
+    # user scripts run in the same session, after the bypass agent — so any
+    # traffic they generate already flows through dead verification
+    for user_path in load:
+        user_file = Path(user_path)
+        if not user_file.is_file():
+            console.print(f"[red]script not found:[/red] {user_path}")
+            raise typer.Exit(1)
+        try:
+            user_script = session.create_script(user_file.read_text())
+            user_script.on("message", _script_message_printer(user_file.name))
+            user_script.load()
+        except Exception as exc:
+            console.print(f"[red]failed to load {user_file.name}:[/red] {exc}")
+            raise typer.Exit(1) from exc
+        console.print(f"[green]loaded user script[/green] {user_path}")
+
     if not no_spawn:
         device.resume(pid)
     console.print("[green]hooked — traffic should now appear in your proxy.[/green]"
@@ -389,7 +416,7 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main(
     version: Optional[bool] = typer.Option(
-        None, "--version", callback=_version_callback, is_flag=True,
+        None, "--version", callback=_version_callback,
         help="Print the version and exit"),
 ):
     """glasswing — authorized-use Flutter SSL pinning bypass."""

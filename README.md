@@ -94,6 +94,9 @@ adb install app-patched.apk
 # 2b. Runtime hook — rooted device / emulator with frida-server
 glasswing hook app.apk --package com.target.app
 
+# bring your own Frida scripts — loaded into the same session after the bypass
+glasswing hook app.apk -l my-interceptor.js -l log-everything.js
+
 # 3. Configure your proxy (Burp / mitmproxy) and browse the app.
 ```
 

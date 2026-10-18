@@ -72,6 +72,8 @@ ignore = [
   # runtime, and PEP 604 unions break on Python 3.9
   "UP007",
   "UP045",
+  # typer's Option/Argument calls in parameter defaults are the framework idiom
+  "B008",
 ]
 
 [tool.pytest.ini_options]
