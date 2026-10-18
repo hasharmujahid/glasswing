@@ -11,48 +11,17 @@ Everything stable (registers, sizes, most opcodes) is preserved.
 
 from __future__ import annotations
 
-import os
+import io
 import zipfile
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import yaml
+from elftools.elf.elffile import ELFFile
 from rich.console import Console
 
 from . import locate
 from .detectors import scan_path
 from .scanner import SignatureEntry
-
-# instruction classes volatile across rebuilds (opcodes change with operands)
-_VOLATILE_X86 = (
-    (0x40, 0x4F),   # REX prefixes settle per register allocation
-)
-_ARM64_VOLATILE_FRAMES = (
-    0x94000000,     # BL rel32
-    0x14000000,     # B  rel32
-    0x90000000,     # ADRP
-)
-
-
-def _libflutter_bytes(path: str) -> Tuple[bytes, Optional[str]]:
-    res = scan_path(path)
-    if res.error:
-        raise RuntimeError(res.error)
-    if res.is_apk:
-        entries = [i.name for i in res.libflutter.values()]
-        entry = res.libflutter_path()
-        if not entry:
-            raise RuntimeError("no libflutter.so inside the APK")
-        with zipfile.ZipFile(path) as zf:
-            return zf.read(entry), res.package
-    return open(path, "rb").read(), None
-
-
-def _arch_of_lib(bare_path: str, arch: Optional[str]) -> str:
-    if arch:
-        return arch
-    raise RuntimeError(
-        "cannot infer ABI of a bare libflutter.so — pass --arch explicitly"
-    )
 
 
 def _wildcard_bytes(data: bytes, off: int, length: int, arch: str) -> str:
@@ -76,7 +45,7 @@ def _wildcard_bytes(data: bytes, off: int, length: int, arch: str) -> str:
             tokens.append(f"{data[i]:02x}")
     # post-process: for x86, wildcard the disp32 that follows rip-relative ops
     if arch in ("x86_64", "x86"):
-        out: List[str] = []
+        out: list[str] = []
         i = off
         n = off + length
         while i < n:
@@ -96,8 +65,39 @@ def _wildcard_bytes(data: bytes, off: int, length: int, arch: str) -> str:
     return " ".join(tokens)
 
 
-def _mask_hi(v: int) -> int:
-    return 0xFF000000
+def _blobs_by_abi(path: str, arch: Optional[str]) -> dict[str, bytes]:
+    """libflutter.so blobs to process: {abi: bytes}, honoring an --arch pin."""
+    res = scan_path(path)
+    if res.error:
+        raise RuntimeError(res.error)
+    if res.is_apk:
+        if not res.libflutter:
+            raise RuntimeError("no libflutter.so inside the APK — is this a Flutter app?")
+        if arch:
+            if arch not in res.libflutter:
+                raise RuntimeError(
+                    f"ABI {arch!r} not present; found: {', '.join(sorted(res.libflutter))}")
+            abis = [arch]
+        else:
+            abis = sorted(res.libflutter)
+        with zipfile.ZipFile(path) as zf:
+            return {abi: zf.read(res.libflutter[abi].name) for abi in abis}
+    # bare libflutter.so
+    if not arch:
+        raise RuntimeError(
+            "cannot infer the ABI of a bare libflutter.so — pass --arch explicitly "
+            "(e.g. --arch arm64-v8a)")
+    with open(path, "rb") as fh:
+        return {arch: fh.read()}
+
+
+def _va_to_file_off(elf: ELFFile, va: int) -> Optional[int]:
+    for seg in elf.iter_segments():
+        if seg["p_type"] == "PT_LOAD":
+            vaddr = int(seg["p_vaddr"])
+            if vaddr <= va < vaddr + int(seg["p_filesz"]):
+                return int(seg["p_offset"]) + (va - vaddr)
+    return None
 
 
 def generate_signature(
@@ -107,37 +107,24 @@ def generate_signature(
     version: Optional[str],
     console: Optional[Console] = None,
     length: int = 16,
-    db_path: str = "",
-) -> None:
-    """Generate a signature entry for db/signatures.yaml from a target APK/logo."""
-    console = console or Console()
-    blob, package = _libflutter_bytes(path)
-    res = scan_path(path)
+) -> list[SignatureEntry]:
+    """Generate signature entries for db/signatures.yaml from a target.
 
-    archs = [arch] if arch else sorted(res.libflutter.keys())
-    entries: List[SignatureEntry] = []
-    for abi in archs:
-        if arch:
-            blob, _package = _libflutter_bytes(path)
-        else:
-            with zipfile.ZipFile(path) as zf:
-                blob = zf.read(res.libflutter[abi].name)
+    Returns the generated entries (empty if the locator failed on every ABI);
+    nothing is written when no entry could be produced."""
+    console = console or Console()
+    blobs = _blobs_by_abi(path, arch)
+
+    entries: list[SignatureEntry] = []
+    for abi, blob in blobs.items():
         hit = locate.locate_verify_chain(blob, abi)
         if hit is None:
             console.print(f"[red]{abi}: struct-locator failed — no signature possible[/red]")
             continue
         stub_entry_off = hit.entry_vaddr  # VA
         # map VA→file offset via PT_LOAD
-        import io as _io
-        from elftools.elf.elffile import ELFFile as _ELF
-
-        elf = _ELF(_io.BytesIO(blob))
-        entry_off = None
-        for seg in elf.iter_segments():
-            if seg["p_type"] == "PT_LOAD":
-                vaddr = int(seg["p_vaddr"])
-                if vaddr <= stub_entry_off < vaddr + int(seg["p_filesz"]):
-                    entry_off = int(seg["p_offset"]) + (stub_entry_off - vaddr)
+        elf = ELFFile(io.BytesIO(blob))
+        entry_off = _va_to_file_off(elf, stub_entry_off)
         if entry_off is None:
             console.print(f"[red]{abi}: VA mapping failed[/red]")
             continue
@@ -152,9 +139,12 @@ def generate_signature(
         console.print(f"[green]{abi}[/green]: entry=0x{entry_off:x}")
         console.print(f"  pattern: {pattern}")
 
-    with open(out_path, "w") as fh:
-        yaml.safe_dump(
-            {"signatures": [e.dump() for e in entries]},
-            fh, sort_keys=False,
-        )
-    console.print(f"[green]wrote[/green] {out_path} — review and open a PR to db/signatures.yaml")
+    if entries:
+        with open(out_path, "w") as fh:
+            yaml.safe_dump(
+                {"signatures": [e.dump() for e in entries]},
+                fh, sort_keys=False,
+            )
+        console.print(f"[green]wrote[/green] {out_path} — review and open a PR "
+                      f"to db/signatures.yaml")
+    return entries

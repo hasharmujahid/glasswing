@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from elftools.elf.elffile import ELFFile
 
@@ -54,11 +54,11 @@ class RelocSlot:
 
 @dataclass
 class MethodVtableCandidate:
-    slots: List[RelocSlot]
+    slots: list[RelocSlot]
     base_slot: int
 
     @property
-    def addends(self) -> List[int]:
+    def addends(self) -> list[int]:
         return [s.addend_va for s in self.slots]
 
 
@@ -67,7 +67,7 @@ class VerifyChainHit:
     arch: str
     entry_vaddr: int
     slot_va: int
-    vtable_slots: List[int] = field(default_factory=list)
+    vtable_slots: list[int] = field(default_factory=list)
     validated_by: str = "string-anchors"   # or "position" (vtable index 9)
 
 
@@ -76,11 +76,11 @@ class VerifyChainHit:
 # ---------------------------------------------------------------------------
 
 
-def _iter_rela_relative(data: bytes, arch: str) -> Dict[int, int]:
+def _iter_rela_relative(data: bytes, arch: str) -> dict[int, int]:
     """slot VA -> addend VA for RELATIVE-type dynamic relocations."""
     meta = _ARCH[arch]
     elf = ELFFile(io.BytesIO(data))
-    out: Dict[int, int] = {}
+    out: dict[int, int] = {}
     for sec in elf.iter_sections():
         st = sec.header["sh_type"]
         if st not in ("SHT_RELA", "SHT_REL"):
@@ -100,7 +100,7 @@ def _iter_rela_relative(data: bytes, arch: str) -> Dict[int, int]:
     return out
 
 
-def _vas(data: bytes) -> Tuple[Optional[int], Optional[int], ELFFile]:
+def _vas(data: bytes) -> tuple[Optional[int], Optional[int], ELFFile]:
     """(text_vaddr, text_size, elf) — from .text section or exec PT_LOAD."""
     elf = ELFFile(io.BytesIO(data))
     for sec in elf.iter_sections():
@@ -136,9 +136,9 @@ def _off_to_va(elf: ELFFile, off: int) -> Optional[int]:
 
 
 def _dense_runs(
-    relocs: Dict[int, int], slot_size: int, text_lo: int, text_hi: int,
+    relocs: dict[int, int], slot_size: int, text_lo: int, text_hi: int,
     min_members: int = 12, max_span: int = 0x4000,
-) -> List[MethodVtableCandidate]:
+) -> list[MethodVtableCandidate]:
     """Group slots into dense runs: consecutive slot addresses (exact spacing)
     whose addends all land in the executable range within a tight span.
 
@@ -148,11 +148,11 @@ def _dense_runs(
     if not relocs:
         return []
     slots = sorted(relocs)
-    runs: List[MethodVtableCandidate] = []
+    runs: list[MethodVtableCandidate] = []
     n = len(slots)
     i = 0
     while i < n:
-        run: List[RelocSlot] = []
+        run: list[RelocSlot] = []
         j = i
         while j < n:
             slot = slots[j]
@@ -163,7 +163,8 @@ def _dense_runs(
             if not (text_lo <= addend < text_hi):
                 break
             run.append(RelocSlot(slot_va=slot, addend_va=addend))
-            if len(run) >= min_members and max(r.addend_va for r in run) - min(r.addend_va for r in run) > max_span:
+            span = max(r.addend_va for r in run) - min(r.addend_va for r in run)
+            if len(run) >= min_members and span > max_span:
                 break
             j += 1
         if len(run) >= min_members:
@@ -180,75 +181,6 @@ def _dense_runs(
 # ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------
-
-
-def _string_refs_x86(data: bytes, elf: ELFFile, func_off: int, window: int, anchors: set) -> set:
-    """RIP-relative LEA references to anchor strings in [func_off, +window]."""
-    hits = set()
-    for i in range(func_off, min(func_off + window, len(data) - 7)):
-        b0 = data[i]
-        if not (0x40 <= b0 <= 0x4F):
-            continue
-        if data[i + 1] != 0x8D:
-            continue
-        if (data[i + 2] & 0xC7) != 0x05:
-            continue
-        disp = int.from_bytes(data[i + 3:i + 7], "little", signed=True)
-        va = _off_to_va(elf, i)
-        if va is None:
-            continue
-        target = va + 7 + disp
-        toff = _va_to_off(elf, target)
-        if toff in anchors:
-            hits.add(toff)
-    return hits
-
-
-def _string_refs_aarch64(data: bytes, elf: ELFFile, func_off: int, window: int, anchors: set) -> set:
-    """ADRP+ADD references to anchor strings in [func_off, +window]."""
-    import array as _array
-    hits = set()
-    code = data[func_off:func_off + window]
-    n = len(code) // 4
-    if n == 0:
-        return hits
-    words = _array.array("I")
-    words.frombytes(code[:n * 4])
-    base_va = _off_to_va(elf, func_off)
-    if base_va is None:
-        return hits
-    adrp: Dict[int, int] = {}
-    for k in range(n):
-        insn = words[k]
-        pc = base_va + k * 4
-        if (insn & 0x9F000000) == 0x90000000:  # ADRP
-            rd = insn & 0x1F
-            immlo = (insn >> 29) & 0x3
-            immhi = (insn >> 5) & 0x7FFFF
-            imm21 = (immhi << 2) | immlo
-            if imm21 & (1 << 20):
-                imm21 -= 1 << 21
-            adrp[rd] = ((pc >> 12) << 12) + (imm21 << 12)
-            continue
-        if (insn & 0xFFC00000) == 0x91000000:  # ADD (immediate, 64-bit)
-            rd, rn = insn & 0x1F, (insn >> 5) & 0x1F
-            imm12 = (insn >> 10) & 0xFFF
-            if rd == rn and rd in adrp:
-                toff = _va_to_off(elf, adrp[rd] + imm12)
-                if toff in anchors:
-                    hits.add(toff)
-    return hits
-
-
-def _string_refs_arm(data: bytes, elf: ELFFile, func_off: int, window: int, anchors: set) -> set:
-    """ARM32: literal pool words holding anchor string addresses."""
-    hits = set()
-    for i in range(func_off, min(func_off + window, len(data) - 4), 4):
-        w = int.from_bytes(data[i:i + 4], "little")
-        toff = _va_to_off(elf, w)
-        if toff in anchors:
-            hits.add(toff)
-    return hits
 
 
 def _validate_entry(
@@ -273,25 +205,30 @@ def _validate_entry(
     return len(hit_anchors)
 
 
-_XREF_MEMO: Dict[Tuple[bytes, object, str], Dict[int, set]] = {}
+# Memo for _anchor_xrefs: (id(data), arch) -> (data, elf, refs).
+# The cache holds a strong reference to `data` (and `elf`) on purpose: bare
+# id() keys would be unsafe after garbage collection recycles an address.
+_XREF_MEMO: dict[tuple[int, str], tuple[bytes, ELFFile, dict[int, set]]] = {}
+_XREF_MEMO_MAX = 8  # blobs retained across calls (each ~libflutter-sized)
 
 
-def _anchor_xrefs(data: bytes, elf: ELFFile, arch: str) -> Dict[int, set]:
+def _anchor_xrefs(data: bytes, elf: ELFFile, arch: str) -> dict[int, set]:
     """Memoized map: anchor-string file offset -> set of instruction file offsets
     referencing it. Computed once per (data, arch); references are:
       x86_64/x86 : any rip-relative LEA (REX? 8D mod=00 rm=101)
       arm64-v8a  : ADRP+ADD pair materializing the anchor VA
       armeabi-v7a: 4-byte literal words equal to the anchor VA
     """
-    key = (id(data), id(elf), arch)
-    if key in _XREF_MEMO:
-        return _XREF_MEMO[key]
+    key = (id(data), arch)
+    cached = _XREF_MEMO.get(key)
+    if cached is not None and cached[0] is data:
+        return cached[2]
 
     anchors = {data.find(s) for s in ANCHOR_STRINGS}
     anchors = {o for o in anchors if o >= 0}
-    refs: Dict[int, set] = {a: set() for a in anchors}
+    refs: dict[int, set] = {a: set() for a in anchors}
     if not anchors:
-        _XREF_MEMO[key] = refs
+        _store_xref_memo(key, data, elf, refs)
         return refs
 
     if arch in ("x86_64", "x86"):
@@ -328,7 +265,7 @@ def _anchor_xrefs(data: bytes, elf: ELFFile, arch: str) -> Dict[int, set]:
                 words = _array.array("I")
             words.frombytes(code)
             base_va = int(seg["p_vaddr"])
-            adrp: Dict[int, int] = {}
+            adrp: dict[int, int] = {}
             for k in range(n):
                 insn = words[k]
                 pc = base_va + k * 4
@@ -365,8 +302,17 @@ def _anchor_xrefs(data: bytes, elf: ELFFile, arch: str) -> Dict[int, set]:
                 refs[aoff].add(i)
                 start = i + 4
 
-    _XREF_MEMO[key] = refs
+    _store_xref_memo(key, data, elf, refs)
     return refs
+
+
+def _store_xref_memo(
+    key: tuple[int, str], data: bytes, elf: ELFFile, refs: dict[int, set]
+) -> None:
+    """Store an xref result, retaining strong refs to (data, elf) for key safety."""
+    if len(_XREF_MEMO) >= _XREF_MEMO_MAX:
+        _XREF_MEMO.clear()
+    _XREF_MEMO[key] = (data, elf, refs)
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +320,7 @@ def _anchor_xrefs(data: bytes, elf: ELFFile, arch: str) -> Dict[int, set]:
 # ---------------------------------------------------------------------------
 
 
-def locate_verify_chain(data: bytes, arch: str, window: int = 0x600) -> Optional[VerifyChainHit]:
+def locate_verify_chain(data: bytes, arch: str) -> Optional[VerifyChainHit]:
     """Locate session_verify_cert_chain's entry VA in a libflutter.so blob."""
     meta = _ARCH.get(arch)
     if meta is None:

@@ -11,10 +11,6 @@ Works with frida-server (rooted device) or a gadget build (rootless).
 
 from __future__ import annotations
 
-from typing import Dict
-
-from .so_patch import stub_for
-
 AGENT_TEMPLATE = r"""
 // glasswing runtime agent — authorized use only.
 'use strict';
@@ -36,14 +32,24 @@ function archOfModule(base) {
   return null;
 }
 
+var ATTEMPTS = 0, MAX_ATTEMPTS = 300;   // ~30s at 100ms, then give up loudly
+
 function patchOnce() {
   var mod = Process.findModuleByName(MODULE_NAME);
-  if (mod === null) { setTimeout(patchOnce, 100); return; }
+  if (mod === null) {
+    if (++ATTEMPTS >= MAX_ATTEMPTS) {
+      send({type:'error', msg: MODULE_NAME + ' not loaded after ~30s — is this a Flutter app?'});
+      return;
+    }
+    setTimeout(patchOnce, 100);
+    return;
+  }
 
   var arch = archOfModule(mod.base);
   var offset = arch ? OFFSETS[arch] : null;
   if (arch === null || offset === undefined) {
-    send({type:'error', msg:'unsupported arch for loaded module (e_machine detection failed or ABI not patched)'});
+    send({type:'error', msg:'unsupported arch for loaded module '
+         '(e_machine detection failed or ABI not patched)'});
     return;
   }
 
@@ -78,7 +84,7 @@ patchOnce();
 """
 
 
-def build_hook_script(offsets: Dict[str, int], stub_hexes: Dict[str, str]) -> str:
+def build_hook_script(offsets: dict[str, int], stub_hexes: dict[str, str]) -> str:
     """Render the Frida agent with the host-computed per-ABI offset map."""
     import json
 

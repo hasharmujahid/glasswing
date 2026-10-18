@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from glasswing import scanner  # noqa: E402
-from glasswing.gen_signature import _wildcard_bytes  # noqa: E402
-from glasswing.so_patch import stub_for, STUBS  # noqa: E402
+from glasswing import scanner
+from glasswing.gen_signature import _wildcard_bytes
+from glasswing.so_patch import STUBS, UnsupportedArch, stub_for
 
 
 def test_pattern_roundtrip():
@@ -66,7 +66,53 @@ def test_copy_stubs_are_sane():
     assert STUBS["armeabi-v7a"] == b"\x01\x20\x70\x47"
     # x86_64: mov eax,1; ret
     assert STUBS["x86_64"] == b"\xb8\x01\x00\x00\x00\xc3"
-    assert stub_for("unknown-arch") is None if False else True
+    # unknown arch is rejected loudly, not silently
+    with pytest.raises(UnsupportedArch):
+        stub_for("mips")
+
+
+def _make_apk(tmp_path, entries):
+    import zipfile
+
+    p = tmp_path / "app.apk"
+    with zipfile.ZipFile(p, "w") as zf:
+        for name in entries:
+            zf.writestr(name, b"\x00" * 16)
+    return str(p)
+
+
+def test_classify_pure_flutter(tmp_path):
+    from glasswing.classify import classify_apk
+
+    apk = _make_apk(tmp_path, ["lib/arm64-v8a/libflutter.so", "lib/arm64-v8a/libapp.so"])
+    v = classify_apk(apk)
+    assert v.is_flutter_target and not v.mixed
+
+
+def test_classify_mixed_app(tmp_path):
+    from glasswing.classify import classify_apk
+
+    apk = _make_apk(tmp_path, ["lib/arm64-v8a/libflutter.so", "lib/arm64-v8a/libxquic.so"])
+    v = classify_apk(apk)
+    assert v.has_flutter_engine and v.mixed and not v.is_flutter_target
+
+
+def test_classify_non_flutter(tmp_path):
+    from glasswing.classify import classify_apk
+
+    apk = _make_apk(tmp_path, ["lib/arm64-v8a/libnative.so"])
+    v = classify_apk(apk)
+    assert not v.is_flutter_target and not v.has_flutter_engine and not v.mixed
+
+
+def test_build_hook_script_substitutes_offsets():
+    from glasswing.hook import build_hook_script
+
+    js = build_hook_script({"arm64-v8a": 0x1000}, {"arm64-v8a": "20008052c0035fd6"})
+    assert '"arm64-v8a": 4096' in js
+    assert '"arm64-v8a": "20008052c0035fd6"' in js
+    # template placeholders fully consumed
+    assert "{{" not in js and "}}" not in js
 
 
 def test_wildcard_arm64_volatile_words():

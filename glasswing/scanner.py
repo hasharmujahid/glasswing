@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import yaml
 
@@ -20,7 +20,7 @@ import yaml
 # ---------------------------------------------------------------------------
 
 
-def pattern_to_bytes(pattern: str) -> Tuple[bytes, bytes]:
+def pattern_to_bytes(pattern: str) -> tuple[bytes, bytes]:
     """Convert a hex wildcard string into (value_bytes, mask_bytes).
 
     'AB CD ??' -> values b'\\xAB\\xCD\\x00', mask b'\\xFF\\xFF\\x00'.
@@ -54,7 +54,7 @@ def pattern_to_bytes(pattern: str) -> Tuple[bytes, bytes]:
     return bytes(val), bytes(mask)
 
 
-def _longest_literal(value: bytes, mask: bytes) -> Tuple[int, int]:
+def _longest_literal(value: bytes, mask: bytes) -> tuple[int, int]:
     """Return (offset, length) of the longest fully-wildcard-free byte run."""
     best_off, best_len, run_off, run_len = 0, 0, 0, 0
     for i, m in enumerate(mask):
@@ -69,7 +69,7 @@ def _longest_literal(value: bytes, mask: bytes) -> Tuple[int, int]:
     return best_off, best_len
 
 
-def match_pattern(data: bytes, pattern: str, max_matches: int = 64) -> List[int]:
+def match_pattern(data: bytes, pattern: str, max_matches: int = 64) -> list[int]:
     """Return file offsets in `data` matching wildcard `pattern`.
 
     Fast path: anchor on the longest literal byte-run and use bytes.find, then
@@ -79,7 +79,7 @@ def match_pattern(data: bytes, pattern: str, max_matches: int = 64) -> List[int]
     if lit_len == 0:
         raise ValueError("pattern has no literal bytes to anchor on")
     literal = bytes(v & 0xFF for v in val[lit_off:lit_off + lit_len])
-    matches: List[int] = []
+    matches: list[int] = []
     start = 0
     while len(matches) < max_matches:
         idx = data.find(literal, start)
@@ -110,7 +110,7 @@ class SignatureEntry:
     offset: Optional[int] = None  # file offset within libflutter.so (informational)
     source: Optional[str] = None
 
-    def dump(self) -> Dict:
+    def dump(self) -> dict:
         return {
             "version": self.version,
             "arch": self.arch,
@@ -120,11 +120,11 @@ class SignatureEntry:
         }
 
 
-def load_signatures(path: str) -> Dict[str, Dict[str, SignatureEntry]]:
+def load_signatures(path: str) -> dict[str, dict[str, SignatureEntry]]:
     """Load signatures.yaml into {arch: {version: entry}}."""
     if not os.path.isfile(path):
         return {}
-    entries: Dict[str, Dict[str, SignatureEntry]] = {}
+    entries: dict[str, dict[str, SignatureEntry]] = {}
     with open(path) as fh:
         doc = yaml.safe_load(fh) or {}
     for item in doc.get("signatures", []):
@@ -139,7 +139,7 @@ def load_signatures(path: str) -> Dict[str, Dict[str, SignatureEntry]]:
     return entries
 
 
-def dump_signatures(entries: List[SignatureEntry], path: str) -> None:
+def dump_signatures(entries: list[SignatureEntry], path: str) -> None:
     """Write a flat signature list to YAML (overwrites)."""
     doc = {"signatures": [e.dump() for e in sorted(entries, key=lambda e: (e.arch, e.version))]}
     with open(path, "w") as fh:
@@ -147,10 +147,10 @@ def dump_signatures(entries: List[SignatureEntry], path: str) -> None:
 
 
 def merge_signature_list(
-    base: Dict[str, Dict[str, SignatureEntry]], new: List[SignatureEntry]
-) -> List[SignatureEntry]:
+    base: dict[str, dict[str, SignatureEntry]], new: list[SignatureEntry]
+) -> list[SignatureEntry]:
     """Merge `new` entries over `base` (same arch+version => overwrite)."""
-    merged: Dict[Tuple[str, str], SignatureEntry] = {}
+    merged: dict[tuple[str, str], SignatureEntry] = {}
     for arch_versions in base.values():
         for version, entry in arch_versions.items():
             merged[(entry.arch, version)] = entry
@@ -184,15 +184,15 @@ def find_by_signature(
     data: bytes,
     arch: str,
     version: Optional[str],
-    signatures: Dict[str, Dict[str, SignatureEntry]],
-) -> Tuple[Optional[int], Optional[str]]:
+    signatures: dict[str, dict[str, SignatureEntry]],
+) -> tuple[Optional[int], Optional[str]]:
     """Locate the verify-cert-chain entry via a known signature.
 
     Returns (file_offset, matched_version) or (None, None)."""
     candidates = signatures.get(arch, {})
     if not candidates:
         return None, None
-    search_order: List[SignatureEntry] = []
+    search_order: list[SignatureEntry] = []
     if version and version in candidates:
         search_order.append(candidates[version])
         search_order.extend(e for v, e in candidates.items() if v != version)

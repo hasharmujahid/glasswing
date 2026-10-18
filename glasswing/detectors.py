@@ -13,7 +13,7 @@ import os
 import re
 import zipfile
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
 FLUTTER_LIB_NAME = "libflutter.so"
 DART_AOT_LIB_NAME = "libapp.so"
@@ -23,7 +23,7 @@ _SNAPSHOT_HASH_RE = re.compile(rb"(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])")
 
 # androguard (4.x) logs via loguru and is extremely chatty at DEBUG level.
 # Default: silenced. Use configure_androguard_logging(True) to see it.
-from loguru import logger as _loguru
+from loguru import logger as _loguru  # noqa: E402 — must precede androguard import
 
 
 def configure_androguard_logging(enabled: bool) -> None:
@@ -57,10 +57,10 @@ class ScanResult:
     path: str
     is_apk: bool
     package: Optional[str] = None
-    archs: List[str] = field(default_factory=list)
-    libflutter: Dict[str, SoInfo] = field(default_factory=dict)  # abi -> info
-    libapp: Dict[str, SoInfo] = field(default_factory=dict)  # abi -> info
-    snapshot_hashes: List[str] = field(default_factory=list)
+    archs: list[str] = field(default_factory=list)
+    libflutter: dict[str, SoInfo] = field(default_factory=dict)  # abi -> info
+    libapp: dict[str, SoInfo] = field(default_factory=dict)  # abi -> info
+    snapshot_hashes: list[str] = field(default_factory=list)
     error: Optional[str] = None
 
     @property
@@ -99,18 +99,18 @@ def _so_info_from_zip(zf: zipfile.ZipFile, entry: str) -> SoInfo:
     return SoInfo(abi=abi, name=entry, size=zi.file_size, offset=None)
 
 
-def _extract_snapshot_hashes(data: bytes, limit: int = 4) -> List[str]:
+def _extract_snapshot_hashes(data: bytes, limit: int = 4) -> list[str]:
     """Best-effort Dart snapshot hash extraction.
 
     libflutter.so embeds the Dart VM snapshot hash as a 32-char lowercase hex
     string. Other unrelated 32-hex strings may also be present, so we rank by
     frequency and return the most common candidates."""
-    seen: Dict[bytes, int] = {}
+    seen: dict[bytes, int] = {}
     for m in _SNAPSHOT_HASH_RE.finditer(data):
         token = m.group(0)
         seen[token] = seen.get(token, 0) + 1
     ranked = sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))
-    out: List[str] = []
+    out: list[str] = []
     for token, _count in ranked[:limit]:
         text = token.decode("ascii", "replace")
         if text not in out:
@@ -126,11 +126,14 @@ def _read_zip_entry(zf: zipfile.ZipFile, entry: str) -> bytes:
 def scan_path(path: str) -> ScanResult:
     """Inspect an APK (zip) or a bare ELF .so file and report Flutter details."""
     kind = _sniff(path)
+    if kind.startswith("unreadable"):
+        return ScanResult(path=path, is_apk=False, error=kind)
     if kind == "unknown":
         return ScanResult(path=path, is_apk=False, error=f"unrecognized file type: {path}")
 
     if kind == "elf":
-        data = open(path, "rb").read()
+        with open(path, "rb") as fh:
+            data = fh.read()
         res = ScanResult(path=path, is_apk=False, archs=[])
         info = SoInfo(abi=os.path.basename(os.path.dirname(path)) or "unknown",
                       name=os.path.basename(path),
@@ -164,7 +167,7 @@ def scan_path(path: str) -> ScanResult:
 
                 apk = APK(path)
                 res.package = apk.get_package()
-            except Exception:  # noqa: BLE001 — metadata is nice-to-have
+            except Exception:
                 res.package = None
             # snapshot hash from the primary libflutter.so
             entry = res.libflutter_path()

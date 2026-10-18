@@ -7,6 +7,16 @@ on:
     - cron: "0 9 * * 1"  # weekly — validate against the latest Flutter engine
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check glasswing/ tests/
+
   unit:
     runs-on: ubuntu-latest
     steps:
@@ -45,22 +55,17 @@ jobs:
               "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"))
           stable_hash = doc["current_release"]["stable"]
           rel = next(r for r in doc["releases"] if r["hash"] == stable_hash)
-          version = rel["version"]
-          archive = rel["archive"]
-          # engine hash ships inside the release archive; the SDK's genesis
-          # convention keeps it beside the artifact path used below:
-          print(f"::set-output name=version::{version}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={rel['version']}\n")
           PY
       - name: Download engine artifact
         run: |
           # engine hash for the release: take it from the flutter repo tag
           version=${{ steps.engine.outputs.version }}
           tag=$(echo "$version" | tr '+' '-')
-          eh=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/$tag/bin/internal/engine.version" | tr -d '[:space:]')
+          eh=$(curl -fsSL "https://raw.githubusercontent.com/flutter/flutter/$tag/bin/internal/engine.version" | tr -d '[:space:]')
           echo "engine=$eh"
-          curl -sL -o /tmp/artifacts.zip \
-            "https://storage.googleapis.com/flutter_infra_release/flutter/$eh/${{ matrix.target }}/artifacts.zip" \
-            || curl -sL -o /tmp/artifacts.zip \
+          curl -fsSL -o /tmp/artifacts.zip \
             "https://storage.googleapis.com/flutter_infra_release/flutter/$eh/${{ matrix.target }}/artifacts.zip"
           unzip -o /tmp/artifacts.zip -d /tmp/eng
       - name: Validate locator + patch

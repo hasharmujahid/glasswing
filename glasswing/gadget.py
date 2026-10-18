@@ -7,24 +7,32 @@ apktool / smali needed.
 
 from __future__ import annotations
 
+import json
+import lzma
 import os
-import platform
 import shutil
-import subprocess
 import tempfile
+import urllib.request
 import zipfile
-from typing import Dict, Optional
+from typing import Optional
 
 GADGET_LIBRARY = "libfrida-gadget.so"
+GADGET_VERSION = "17.2.14"
+
+# glasswing ABI -> frida release naming
+ABI_TO_FRIDA_ARCH = {
+    "arm64-v8a": "arm64",
+    "armeabi-v7a": "arm",
+    "x86_64": "x86_64",
+    "x86": "x86",
+}
 
 
-def default_gadget_config(package: str) -> bytes:
-    """A config that listens on all interfaces so `frida -U Gadget` attaches."""
-    import json
-
+def default_gadget_config() -> bytes:
+    """Listen-mode config so `frida -U Gadget` can attach to the process."""
     cfg = {
         "interaction": {
-            "type": "script",
+            "type": "listen",
             "address": "127.0.0.1",
             "port": 27042,
             "on_change": "reload",
@@ -41,8 +49,10 @@ def inject_gadget(
     gadget_blob: Optional[bytes] = None,
     package: Optional[str] = None,
     keystore_path: Optional[str] = None,
+    ks_pass: Optional[str] = None,
+    key_alias: Optional[str] = None,
 ) -> str:
-    """Inject frida-gadget into an APK's libflutter.so for `abi` and produce out_path.
+    """Inject frida-gadget into the APK's lib/<abi>/libflutter.so and re-sign.
 
     gadget_blob may be omitted to skip the payload copy (advanced); in that case
     the config-only injection mode is used and the user must provide the gadget
@@ -52,11 +62,10 @@ def inject_gadget(
 
     from . import apk as apkmod
 
-    if abi not in ("arm64-v8a", "armeabi-v7a", "x86_64", "x86"):
+    if abi not in ABI_TO_FRIDA_ARCH:
         raise ValueError(f"unsupported abi for gadget injection: {abi!r}")
 
     entry_libflutter = f"lib/{abi}/libflutter.so"
-    patch_lib_name = f"libglasswing{abi}.so"  # marker lib (harmless placeholder)
 
     with tempfile.TemporaryDirectory(prefix="glasswing-") as td:
         # 1. pull libflutter.so out of the APK
@@ -68,31 +77,29 @@ def inject_gadget(
             fh.write(libflutter_bytes)
 
         # 2. inject a DT_NEEDED reference to the gadget
-        target_name = GADGET_LIBRARY
         lib = lief.parse(libflutter_path)
         if lib is None:
             raise RuntimeError("LIEF could not parse libflutter.so")
         prev_needed = [e.name for e in lib.dynamic_entries if e.tag == lief.ELF.DYNAMIC_TAGS.NEEDED]
-        if target_name not in prev_needed:
-            lib.add_library(target_name)
+        if GADGET_LIBRARY not in prev_needed:
+            lib.add_library(GADGET_LIBRARY)
             lib.save(libflutter_path)  # this may reorganize sections; acceptable here
             with open(libflutter_path, "rb") as fh:
                 libflutter_bytes = fh.read()
 
-        # 3. assemble added files
-        additions: Dict[str, bytes] = {entry_libflutter: libflutter_bytes}
+        # 3. assemble added files (config name must end in .so to survive repacking)
+        additions: dict[str, bytes] = {entry_libflutter: libflutter_bytes}
         if gadget_blob:
             additions[f"lib/{abi}/{GADGET_LIBRARY}"] = gadget_blob
-        additions[f"lib/{abi}/libfrida-gadget.config.so"] = default_gadget_config(package or "app")
+        additions[f"lib/{abi}/libfrida-gadget.config.so"] = default_gadget_config()
 
-        # 4. repack + re-sign
+        # 4. repack + re-sign (in-place is safe: repack stages through a temp file)
         apkmod.repack_apk(apk_path, out_path, added_files=list(additions.items()))
-        apkmod.sign_apk(out_path, keystore_path=keystore_path)
+        apkmod.sign_apk(out_path, keystore_path=keystore_path,
+                        ks_pass=ks_pass or apkmod.KS_PASS,
+                        key_alias=key_alias or apkmod.KEY_ALIAS)
 
     return out_path
-
-
-GADGET_VERSION = "17.2.14"
 
 
 def download_gadget(
@@ -100,11 +107,18 @@ def download_gadget(
 ) -> str:
     """Download a frida-gadget release from GitHub for `arch`.
 
-    Returns the path to the .so file.arch is one of 'arm64', 'arm', 'x86_64', 'x86'.
+    Returns the path to the .so file. `arch` is frida's naming:
+    one of 'arm64', 'arm', 'x86_64', 'x86'.
     """
     version = version or GADGET_VERSION
-    suffix = {"arm64": "android-arm64", "arm": "android-arm",
-              "x86_64": "android-x86_64", "x86": "android-x86"}[arch]
+    suffix = {
+        "arm64": "android-arm64",
+        "arm": "android-arm",
+        "x86_64": "android-x86_64",
+        "x86": "android-x86",
+    }.get(arch)
+    if suffix is None:
+        raise ValueError(f"unsupported frida arch: {arch!r}")
     url = (
         "https://github.com/frida/frida/releases/download/"
         f"{version}/frida-gadget-{suffix}.so.xz"
@@ -116,13 +130,8 @@ def download_gadget(
         return out_file
 
     xz_path = out_file + ".xz"
-    shutil.copy_obj = None  # avoid accidental reliance on copy semantics
-    import urllib.request
-
     urllib.request.urlretrieve(url, xz_path)
-    subprocess.run(["xz", "-d", xz_path], check=True)
+    with lzma.open(xz_path) as fin, open(out_file, "wb") as fout:
+        shutil.copyfileobj(fin, fout)
+    os.remove(xz_path)
     return out_file
-
-
-def host_arch_for_gadget() -> str:
-    return {"aarch64": "arm64", "x86_64": "x86_64"}.get(platform.machine(), "arm64")

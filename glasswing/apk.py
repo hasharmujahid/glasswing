@@ -13,9 +13,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import tempfile
 import zipfile
-from typing import List, Optional, Tuple
+from typing import Optional
 
 STORED = zipfile.ZIP_STORED
 DEFLATED = zipfile.ZIP_DEFLATED
@@ -24,22 +23,8 @@ DEFAULT_DEBUG_KEYSTORE = os.path.expanduser("~/.glasswing/debug.keystore")
 KS_PASS = "glasswing"
 KEY_ALIAS = "glasswing"
 
-
-def extract_apk(apk_path: str, dest: str) -> str:
-    """Extract an APK's contents to `dest` (created). Returns dest."""
-    os.makedirs(dest, exist_ok=True)
-    with zipfile.ZipFile(apk_path) as zf:
-        zf.extractall(dest)
-    return dest
-
-
-def verify_apk(apk_path: str) -> List[str]:
-    """Return a list of problems with an (unsigned) repacked APK, or [] on success."""
-    problems = []
-    with zipfile.ZipFile(apk_path) as zf:
-        if "AndroidManifest.xml" not in zf.namelist():
-            problems.append("missing AndroidManifest.xml")
-    return problems
+# Fixed timestamp for archive entries: keeps repacks byte-reproducible.
+_ZIP_EPOCH = (2026, 1, 1, 0, 0, 0)
 
 
 def _find_build_tool(name: str) -> Optional[str]:
@@ -144,9 +129,9 @@ def repack_apk(
     apk_path: str,
     out_path: str,
     *,
-    replacements: Optional[List[Tuple[str, bytes]]] = None,
-    added_files: Optional[List[Tuple[str, bytes]]] = None,
-    removed: Optional[List[str]] = None,
+    replacements: Optional[list[tuple[str, bytes]]] = None,
+    added_files: Optional[list[tuple[str, bytes]]] = None,
+    removed: Optional[list[str]] = None,
     work_dir: Optional[str] = None,
 ) -> str:
     """Rebuild an APK file from `apk_path` with modifications applied.
@@ -191,7 +176,7 @@ def repack_apk(
             zi.create_system = 0
             dst.writestr(zi, data)
         for name, blob in added:
-            zi = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+            zi = zipfile.ZipInfo(name, date_time=_ZIP_EPOCH)
             zi.compress_type = STORED if name.endswith(".so") else DEFLATED
             zi.external_attr = 0o755 << 16
             zi.create_system = 0
@@ -210,24 +195,3 @@ def repack_apk(
     if work_dir:
         shutil.rmtree(work_dir, ignore_errors=True)
     return out_path
-
-
-def pull_apk(package: str, out_path: str, adb: str = "adb") -> str:
-    """Pull an installed package's APK from a connected (rooted) device."""
-    base = subprocess.run(
-        [adb, "shell", "pm", "path", package], check=True, capture_output=True, text=True
-    ).stdout.strip()
-    paths = [line.split(":", 1)[1] for line in base.splitlines() if line.startswith("package:")]
-    if not paths:
-        raise RuntimeError(f"package {package!r} not found on device")
-    # Pull the base.apk (the firstListing is usually base).
-    device_path = paths[0]
-    subprocess.run([adb, "pull", device_path, out_path], check=True, capture_output=True)
-    return out_path
-
-
-def keep_signature_tmp(name: str) -> str:
-    """Return a persistent temp path for intermediate artifacts."""
-    fd, path = tempfile.mkstemp(suffix=name)
-    os.close(fd)
-    return path

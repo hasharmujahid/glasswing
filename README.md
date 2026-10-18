@@ -6,6 +6,7 @@
 
 *Bypass BoringSSL certificate pinning in Flutter Android apps — static `libflutter.so` patching + Frida runtime hooks, no engine rebuild required.*
 
+[![CI](https://github.com/hasharmujahid/glasswing/actions/workflows/ci.yml/badge.svg)](https://github.com/hasharmujahid/glasswing/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.44+-42A5F5.svg?logo=flutter)](https://flutter.dev)
 [![Android](https://img.shields.io/badge/Android-8.0+-3DDC84.svg?logo=android)](https://www.android.com)
@@ -65,8 +66,14 @@ Verified on Flutter **3.44** and **3.47** engine binaries (x86_64, arm64-v8a, ar
 
 ```bash
 pip install .          # from a checkout
+# or straight from GitHub:
+pip install git+https://github.com/hasharmujahid/glasswing.git
 glasswing --version
 ```
+
+Patched APKs are re-signed with an auto-generated debug keystore
+(`~/.glasswing/debug.keystore`) on first use. To sign with your own identity,
+pass `--keystore` (plus `--ks-pass` / `--key-alias`) to `glasswing patch`.
 
 **System requirements** (auto-detected from `$ANDROID_HOME`):
 

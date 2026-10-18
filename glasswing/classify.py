@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import zipfile
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 # well-known native network stacks that do their own TLS/pinning,
 # i.e. NOT Flutter's BoringSSL and NOT covered by glasswing
 NON_FLUTTER_TLS_LIBS = {
     "libtnet": "Alibaba ANet (SLIGHT_SSL: custom TLS 1.3 + custom public-key pinning)",
     "libxquic": "Alibaba XQUIC (QUIC; embedded BabaSSL — a BoringSSL fork, but not libflutter's)",
-    "libopenssl": "Shared OpenSSL (used by e.g. libgaea.so / gRPC layer, outside the Flutter engine)",
+    "libopenssl": "Shared OpenSSL (used by e.g. libgaea.so / gRPC layer, "
+                  "outside the Flutter engine)",
     "libcronet": "Chromium Cronet (own network stack + pinning)",
     "libssl": "Standalone OpenSSL/BoringSSL shlib (not the Flutter engine)",
     "libconscrypt": "Conscrypt (Android Java TLS provider)",
@@ -28,7 +28,7 @@ NON_FLUTTER_TLS_LIBS = {
 class TargetVerdict:
     is_flutter_target: bool          # true => glasswing can bypass the Flutter-side pinning
     has_flutter_engine: bool
-    non_flutter_stacks: List[str] = field(default_factory=list)
+    non_flutter_stacks: list[str] = field(default_factory=list)
     reason: str = ""
 
     @property
